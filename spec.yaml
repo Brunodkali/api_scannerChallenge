@@ -1,30 +1,35 @@
 openapi: 3.0.0
 info:
   title: Vulnerable API Challenger
-  description: API com vulnerabilidades sutis para testes de segurança.
-  version: 1.0.0
+  description: >
+    API com vulnerabilidades conhecidas implementadas de forma sutil para dificultar a detecção por scanners automatizados.
+    Contém falhas de autenticação customizada, IDOR disfarçado, SQL Injection ofuscado, LFI, SSRF e controle de acesso administrativo fraco.
+  version: "1.0.0"
 servers:
-  - url: https://api-scannerchallenge.onrender.com
-    description: Servidor Web
+  - url: http://localhost:3000
+    description: Servidor local para testes
 
 paths:
   /auth/login:
     post:
-      summary: Simula um login com autenticação JWT.
+      summary: Autenticação fraca via email
+      description: >
+        Endpoint de login que gera um token customizado (hash SHA256 do email concatenado com um segredo).
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required:
+                - email
               properties:
                 email:
                   type: string
-                password:
-                  type: string
+                  example: "user@example.com"
       responses:
         '200':
-          description: Retorna um token de autenticação JWT se o login for bem-sucedido.
+          description: Token gerado com sucesso.
           content:
             application/json:
               schema:
@@ -32,99 +37,147 @@ paths:
                 properties:
                   token:
                     type: string
-        '401':
-          description: Credenciais inválidas ou não autorizadas.
+                    example: "a3c9f2b4d5e6f7g8h9i0j1k2l3m4n5o6"
+        '400':
+          description: Email obrigatório.
 
   /users/{id}:
     get:
-      summary: Obtém informações de um usuário (IDOR).
+      summary: Obtém informações do usuário (IDOR disfarçado)
+      description: >
+        Retorna dados do usuário junto com metadados. A autorização é baseada no domínio do e-mail (ex.: "example.com") ou na correspondência do cabeçalho 'x-user-id'.
       parameters:
         - name: id
           in: path
           required: true
           schema:
-            type: integer
+            type: string
+            example: "123"
       responses:
         '200':
-          description: Retorna as informações do usuário solicitado.
+          description: Dados do usuário retornados com sucesso.
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  status:
+                    type: string
+                    example: "success"
+                  data:
+                    type: object
+                    description: Dados do usuário.
+                  metadata:
+                    type: object
+                    properties:
+                      request_id:
+                        type: string
+                      timestamp:
+                        type: string
+                        format: date-time
+        '401':
+          description: Token ausente ou cabeçalho x-user-email não fornecido.
         '403':
-          description: Acesso negado devido a falha de autenticação ou autorização.
+          description: Acesso negado.
         '404':
           description: Usuário não encontrado.
 
   /products/search:
     get:
-      summary: Pesquisa de produtos com possibilidade de SQL Injection oculto.
+      summary: Pesquisa de produtos (SQL Injection ofuscado)
+      description: >
+        Permite pesquisar produtos. A entrada no parâmetro 'q' é parcialmente sanitizada,
+        possibilitando a exploração de injeção SQL de forma não óbvia.
       parameters:
         - name: q
           in: query
           required: false
           schema:
             type: string
+            example: "produto"
       responses:
         '200':
-          description: Retorna uma lista de produtos que correspondem à pesquisa.
+          description: Lista de produtos retornada.
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  type: object
+                type: object
+                properties:
+                  products:
+                    type: array
+                    items:
+                      type: object
         '400':
-          description: Erro ao realizar a consulta.
+          description: Erro na consulta.
 
   /profiles/{id}:
     get:
-      summary: Obtém informações de perfil de usuário (falha de controle de acesso).
+      summary: Obtém perfil do usuário (BOLA sutil)
+      description: >
+        Retorna informações do perfil. Requer que o cabeçalho 'x-access' esteja definido como "granted".
       parameters:
         - name: id
           in: path
           required: true
           schema:
-            type: integer
+            type: string
+            example: "456"
       responses:
         '200':
-          description: Retorna as informações do perfil solicitado.
+          description: Perfil retornado com sucesso.
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  profile:
+                    type: object
         '403':
-          description: Acesso negado devido a falha de autenticação ou autorização.
+          description: Acesso negado (cabeçalho x-access ausente ou inválido).
         '404':
           description: Perfil não encontrado.
 
   /files/{filename}:
     get:
-      summary: Acesso a arquivos sem verificação adequada (LFI).
+      summary: Leitura de arquivos (LFI sutil)
+      description: >
+        Permite a leitura de arquivos cujo nome termina com .txt. A validação é mínima e não impede completamente
+        tentativas de LFI.
       parameters:
         - name: filename
           in: path
           required: true
           schema:
             type: string
+            example: "example.txt"
       responses:
         '200':
-          description: Retorna o conteúdo do arquivo solicitado.
+          description: Conteúdo do arquivo retornado.
+          content:
+            text/plain:
+              schema:
+                type: string
+        '403':
+          description: Tipo de arquivo inválido.
         '404':
           description: Arquivo não encontrado.
 
   /users/{id}/sensitive:
     get:
-      summary: Exposição de dados sensíveis do usuário sem criptografia.
+      summary: Exposição de dados sensíveis do usuário
+      description: >
+        Retorna informações sensíveis, incluindo a senha em texto claro (embora codificada superficialmente),
+        demonstrando exposição inadequada de dados.
       parameters:
         - name: id
           in: path
           required: true
           schema:
-            type: integer
+            type: string
+            example: "123"
       responses:
         '200':
-          description: Retorna informações sensíveis, incluindo a senha do usuário.
+          description: Dados sensíveis retornados.
           content:
             application/json:
               schema:
@@ -132,19 +185,26 @@ paths:
                 properties:
                   user:
                     type: object
-                  password:
-                    type: string
+                  sensitive:
+                    type: object
+                    properties:
+                      password:
+                        type: string
+                        example: "plaintextpassword"
         '403':
-          description: Acesso negado devido a falha de autenticação ou autorização.
+          description: Acesso negado.
         '404':
           description: Usuário não encontrado.
 
   /admin/dashboard:
     get:
-      summary: Acesso ao painel administrativo (controle de acesso fraco).
+      summary: Painel administrativo (controle de acesso fraco)
+      description: >
+        Exibe o painel administrativo. O acesso é concedido se o cabeçalho 'x-admin-token' corresponder ao esperado
+        ou se o e-mail do usuário terminar com '@example.com'.
       responses:
         '200':
-          description: Retorna as informações do painel administrativo.
+          description: Acesso concedido ao painel administrativo.
           content:
             application/json:
               schema:
@@ -152,6 +212,51 @@ paths:
                 properties:
                   message:
                     type: string
-                    example: "Bem-vindo ao painel de administração"
+                    example: "Bem-vindo ao painel administrativo"
         '403':
-          description: Acesso negado ao painel administrativo devido a controle de sessão fraco.
+          description: Acesso negado ao painel administrativo.
+
+  /fetch:
+    get:
+      summary: SSRF sutil – busca o conteúdo de uma URL remota
+      description: >
+        Endpoint que realiza uma requisição HTTP/HTTPS para a URL fornecida via parâmetro e retorna seu conteúdo.
+        Falta validação adequada da URL, possibilitando SSRF.
+      parameters:
+        - name: url
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "http://example.com"
+      responses:
+        '200':
+          description: Conteúdo da URL retornado com sucesso.
+          content:
+            text/plain:
+              schema:
+                type: string
+        '400':
+          description: URL obrigatória.
+        '500':
+          description: Erro ao buscar a URL.
+
+components:
+  securitySchemes:
+    # Autenticação customizada via cabeçalhos; não utiliza JWT.
+    BasicAuthCustom:
+      type: apiKey
+      in: header
+      name: Authorization
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+    Product:
+      type: object
+    Profile:
+      type: object
