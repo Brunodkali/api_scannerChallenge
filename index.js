@@ -38,16 +38,9 @@ app.post('/auth/login', (req, res) => {
 
         const user = result[0];
 
-        // Falha sutil: não estamos utilizando uma constante de salt para bcrypt
-        bcrypt.compare(password, user.password, (err, match) => {
-            if (err || !match) {
-                return res.status(401).json({ error: 'Credenciais inválidas' });
-            }
-
-            // Token gerado com informações expostas sem necessidade
-            const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '1h' });
-            return res.status(200).json({ token });
-        });
+        // Token gerado com informações expostas sem necessidade
+        const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        return res.status(200).json({ token });
     });
 });
 
