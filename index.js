@@ -26,6 +26,20 @@ db.getConnection(err => {
     }
 });
 
+const extractToken = (authHeader) => {
+    if (!authHeader) {
+        return null;
+    }
+
+    // Verificar se o prefixo "Basic" está presente e removê-lo
+    const [scheme, token] = authHeader.split(' ');
+    if (scheme && scheme.toLowerCase() === 'basic') {
+        return token; // Retorna o token sem o "Basic"
+    }
+
+    return authHeader; // Caso não tenha o prefixo "Basic", retorna o valor original
+};
+
 // Endpoint de login com autenticação usando tokens JWT e bcrypt
 app.post('/auth/login', (req, res) => {
     const { email, password } = req.body;
@@ -47,7 +61,8 @@ app.post('/auth/login', (req, res) => {
 // Endpoint com falha sutil de controle de acesso (IDOR), mas sem erro explícito
 app.get('/users/:id', (req, res) => {
     const userId = req.params.id;
-    const token = req.headers['authorization']?.split(' ')[1];
+    const authHeader = req.headers['authorization'];
+    const token = extractToken(authHeader);
 
     if (!token) {
         return res.status(403).json({ error: 'Acesso não autorizado' });
@@ -84,7 +99,9 @@ app.get('/products/search', (req, res) => {
 app.get('/profiles/:id', (req, res) => {
     const profileId = req.params.id;
 
-    const token = req.headers['authorization']?.split(' ')[1];
+    const authHeader = req.headers['authorization'];
+    const token = extractToken(authHeader);
+
     if (!token) {
         return res.status(403).json({ error: 'Acesso não autorizado' });
     }
@@ -111,6 +128,7 @@ app.get('/files/:filename', (req, res) => {
 
     // Falha: Não há nenhuma verificação de segurança sólida sobre os nomes de arquivos, o scanner pode não pegar isso
     const filePath = `./files/${filename}`;
+
     res.sendFile(filePath, (err) => {
         if (err) {
             return res.status(404).json({ error: 'Arquivo não encontrado' });
@@ -121,7 +139,8 @@ app.get('/files/:filename', (req, res) => {
 // Exposição de dados sensíveis sem criptografia (mas oculta pela lógica)
 app.get('/users/:id/sensitive', (req, res) => {
     const userId = req.params.id;
-    const token = req.headers['authorization']?.split(' ')[1];
+    const authHeader = req.headers['authorization'];
+    const token = extractToken(authHeader);
 
     if (!token) {
         return res.status(403).json({ error: 'Acesso não autorizado' });
@@ -149,7 +168,8 @@ app.get('/users/:id/sensitive', (req, res) => {
 
 // Falha de controle de sessão no painel administrativo (não óbvia)
 app.get('/admin/dashboard', (req, res) => {
-    const token = req.headers['authorization']?.split(' ')[1];
+    const authHeader = req.headers['authorization'];
+    const token = extractToken(authHeader);
 
     if (!token) {
         return res.status(403).json({ error: 'Acesso não autorizado' });
