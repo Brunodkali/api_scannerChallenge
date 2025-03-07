@@ -1,0 +1,93 @@
+openapi: 3.0.0
+info:
+  title: Vulnerable API Challenger
+  description: API com vulnerabilidades para testes de segurança.
+  version: 1.0.0
+servers:
+  - url: https://api-scannerchallenge.onrender.com
+    description: Servidor Web
+paths:
+  /auth/login:
+    post:
+      summary: Simula um login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+      responses:
+        '200':
+          description: Retorna um token de autenticação
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+  /users/{id}:
+    get:
+      summary: Obtém informações de um usuário (IDOR)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Retorna os dados do usuário
+          content:
+            application/json:
+              schema:
+                type: object
+  /products/search:
+    get:
+      summary: Pesquisa produtos (Possível SQL Injection)
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Retorna uma lista de produtos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+  /profiles/{id}:
+    get:
+      summary: Obtém perfil do usuário (BOLA)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Retorna os dados do perfil
+          content:
+            application/json:
+              schema:
+                type: object
+  /files/{filename}:
+    get:
+      summary: Acesso a arquivos sem restrição (Possível LFI)
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Retorna o nome do arquivo solicitado
