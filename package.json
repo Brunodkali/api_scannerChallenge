@@ -1,0 +1,18 @@
+{
+  "name": "api_scanner_challenger",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon index.js",
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "bugzzy",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "mysql": "^2.18.1",
+    "nodemon": "^3.1.9"
+  }
+}
