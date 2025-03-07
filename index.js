@@ -7,16 +7,22 @@ const fs = require('fs');
 app.use(express.json());
 
 // Conexão com banco MySQL (simulação)
-const db = mysql.createConnection({
+const db = mysql.createPool({
+    connectionLimit: 10,
     host: '193.203.175.157',
     user: 'u522975890_teste',
     password: '*8gjl4DK',
-    database: 'u522975890_teste'
+    database: 'u522975890_teste',
+    port: 3306
 });
 
-db.connect(err => {
-    if (err) throw err;
-    console.log('Conectado ao MySQL');
+db.getConnection((err, connection) => {
+    if (err) {
+        console.error('Erro ao conectar:', err.code);
+    } else {
+        console.log('Conectado ao MySQL!');
+        connection.release();
+    }
 });
 
 // 1. Autenticação Fraca - Apenas ID como "autenticação" com um token fake
