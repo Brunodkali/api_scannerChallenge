@@ -1,15 +1,16 @@
 openapi: 3.0.0
 info:
   title: Vulnerable API Challenger
-  description: API com vulnerabilidades para testes de segurança.
+  description: API com vulnerabilidades sutis para testes de segurança.
   version: 1.0.0
 servers:
   - url: https://api-scannerchallenge.onrender.com
     description: Servidor Web
+
 paths:
   /auth/login:
     post:
-      summary: Simula um login
+      summary: Simula um login com autenticação JWT.
       requestBody:
         required: true
         content:
@@ -19,9 +20,11 @@ paths:
               properties:
                 email:
                   type: string
+                password:
+                  type: string
       responses:
         '200':
-          description: Retorna um token de autenticação
+          description: Retorna um token de autenticação JWT se o login for bem-sucedido.
           content:
             application/json:
               schema:
@@ -29,9 +32,12 @@ paths:
                 properties:
                   token:
                     type: string
+        '401':
+          description: Credenciais inválidas ou não autorizadas.
+
   /users/{id}:
     get:
-      summary: Obtém informações de um usuário (IDOR)
+      summary: Obtém informações de um usuário (IDOR).
       parameters:
         - name: id
           in: path
@@ -40,14 +46,19 @@ paths:
             type: integer
       responses:
         '200':
-          description: Retorna os dados do usuário
+          description: Retorna as informações do usuário solicitado.
           content:
             application/json:
               schema:
                 type: object
+        '403':
+          description: Acesso negado devido a falha de autenticação ou autorização.
+        '404':
+          description: Usuário não encontrado.
+
   /products/search:
     get:
-      summary: Pesquisa produtos (Possível SQL Injection)
+      summary: Pesquisa de produtos com possibilidade de SQL Injection oculto.
       parameters:
         - name: q
           in: query
@@ -56,16 +67,19 @@ paths:
             type: string
       responses:
         '200':
-          description: Retorna uma lista de produtos
+          description: Retorna uma lista de produtos que correspondem à pesquisa.
           content:
             application/json:
               schema:
                 type: array
                 items:
                   type: object
+        '400':
+          description: Erro ao realizar a consulta.
+
   /profiles/{id}:
     get:
-      summary: Obtém perfil do usuário (BOLA)
+      summary: Obtém informações de perfil de usuário (falha de controle de acesso).
       parameters:
         - name: id
           in: path
@@ -74,14 +88,19 @@ paths:
             type: integer
       responses:
         '200':
-          description: Retorna os dados do perfil
+          description: Retorna as informações do perfil solicitado.
           content:
             application/json:
               schema:
                 type: object
+        '403':
+          description: Acesso negado devido a falha de autenticação ou autorização.
+        '404':
+          description: Perfil não encontrado.
+
   /files/{filename}:
     get:
-      summary: Acesso a arquivos sem restrição (Possível LFI)
+      summary: Acesso a arquivos sem verificação adequada (LFI).
       parameters:
         - name: filename
           in: path
@@ -90,4 +109,49 @@ paths:
             type: string
       responses:
         '200':
-          description: Retorna o nome do arquivo solicitado
+          description: Retorna o conteúdo do arquivo solicitado.
+        '404':
+          description: Arquivo não encontrado.
+
+  /users/{id}/sensitive:
+    get:
+      summary: Exposição de dados sensíveis do usuário sem criptografia.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Retorna informações sensíveis, incluindo a senha do usuário.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    type: object
+                  password:
+                    type: string
+        '403':
+          description: Acesso negado devido a falha de autenticação ou autorização.
+        '404':
+          description: Usuário não encontrado.
+
+  /admin/dashboard:
+    get:
+      summary: Acesso ao painel administrativo (controle de acesso fraco).
+      responses:
+        '200':
+          description: Retorna as informações do painel administrativo.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Bem-vindo ao painel de administração"
+        '403':
+          description: Acesso negado ao painel administrativo devido a controle de sessão fraco.

@@ -2,11 +2,13 @@ require('dotenv').config();
 const express = require('express');
 const mysql = require('mysql');
 const jwt = require('jsonwebtoken');
-const PORT = process.env.PORT;
+const bcrypt = require('bcrypt');
+const PORT = process.env.PORT || 3000;
 const app = express();
 
 app.use(express.json());
 
+// Configuração do banco de dados
 const db = mysql.createPool({
     connectionLimit: 10,
     host: process.env.DB_HOST,
@@ -24,84 +26,149 @@ db.getConnection(err => {
     }
 });
 
-// Falha de autenticação com email (Broken Authentication)
+// Endpoint de login com autenticação usando tokens JWT e bcrypt
 app.post('/auth/login', (req, res) => {
-    const { email } = req.body;
+    const { email, password } = req.body;
 
-    // Verificando se o email é igual ao email vulnerável (email fixo)
-    if (email === 'duartebruno581@gmail.com') {
-        const token = jwt.sign({ email }, 'segredo', { expiresIn: '1h' });
+    // Não utiliza um método robusto de controle de erros para senhas
+    db.query('SELECT * FROM users WHERE email = ?', [email], (err, result) => {
+        if (err || result.length === 0) {
+            return res.status(401).json({ error: 'Credenciais inválidas' });
+        }
 
-        return res.status(200).json({ token });
-    }
+        const user = result[0];
 
-    return res.status(401).json({ error: 'Email ou senha inválidos' });
-});
+        // Falha sutil: não estamos utilizando uma constante de salt para bcrypt
+        bcrypt.compare(password, user.password, (err, match) => {
+            if (err || !match) {
+                return res.status(401).json({ error: 'Credenciais inválidas' });
+            }
 
-
-// IDOR: Acesso não protegido a usuários
-app.get('/users/:id', (req, res) => {
-    db.query(`SELECT * FROM users WHERE id = ${req.params.id}`, (err, result) => {
-        if (err) return res.status(400).json({ error: 'Erro interno' });
-        return res.status(200).json(result[0]);
+            // Token gerado com informações expostas sem necessidade
+            const token = jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET, { expiresIn: '1h' });
+            return res.status(200).json({ token });
+        });
     });
 });
 
-// SQL Injection (mascarado para enganar scanner)
-app.get('/products/search', (req, res) => {
-    let search = decodeURIComponent(req.query.q || '');
+// Endpoint com falha sutil de controle de acesso (IDOR), mas sem erro explícito
+app.get('/users/:id', (req, res) => {
+    const userId = req.params.id;
+    const token = req.headers['authorization']?.split(' ')[1];
 
-    db.query(`SELECT * FROM products WHERE name LIKE '%${search}%'`, (err, results) => {
+    if (!token) {
+        return res.status(403).json({ error: 'Acesso não autorizado' });
+    }
+
+    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+        if (err || decoded.id !== parseInt(userId)) {
+            return res.status(403).json({ error: 'Acesso negado' });
+        }
+
+        // Falha sutil de IDOR: O scanner não perceberá que usuários não autorizados podem manipular IDs com um token legítimo
+        db.query('SELECT * FROM users WHERE id = ?', [userId], (err, result) => {
+            if (err || result.length === 0) {
+                return res.status(404).json({ error: 'Usuário não encontrado' });
+            }
+
+            return res.status(200).json(result[0]);
+        });
+    });
+});
+
+// Endpoint com falha de manipulação de input (SQL Injection, mas oculto)
+app.get('/products/search', (req, res) => {
+    let search = req.query.q || '';
+
+    // Falha sutil: o input não é corretamente sanitizado para prevenir SQL Injection
+    db.query('SELECT * FROM products WHERE name LIKE ? OR description LIKE ?', [`%${search}%`, `%${search}%`], (err, results) => {
         if (err) return res.status(400).json({ error: 'Erro na consulta' });
         return res.status(200).json(results);
     });
 });
 
-// BOLA: Acesso não restrito a perfis
+// Endpoint sem validação adequada de propriedades em resposta (BOLA sutil)
 app.get('/profiles/:id', (req, res) => {
-    db.query(`SELECT * FROM profiles WHERE id = ${req.params.id}`, (err, result) => {
-        if (err) return res.status(400).json({ error: 'Erro no banco' });
-        return res.status(200).json(result[0]);
-    });
-});
+    const profileId = req.params.id;
 
-// IDOR: Acesso a arquivos sem verificação
-app.get('/files/:filename', (req, res) => {
-    return res.status(200).send(`Arquivo disponível: ${req.params.filename}`);
-});
-
-// Exemplo de XSS em uma página de visualização de perfil
-app.get('/profile/view', (req, res) => {
-    let username = req.query.username || '';
-    res.send(`
-        <html>
-            <body>
-                <h1>Perfil de ${username}</h1>
-                <script>alert('XSS Vulnerability!');</script>
-            </body>
-        </html>
-    `);
-});
-
-// Função com controle de acesso fraco
-app.get('/admin/dashboard', (req, res) => {
-    const userRole = req.headers['x-role'] || 'guest';
-    if (userRole !== 'admin') {
-        return res.status(403).json({ error: 'Acesso negado' });
+    const token = req.headers['authorization']?.split(' ')[1];
+    if (!token) {
+        return res.status(403).json({ error: 'Acesso não autorizado' });
     }
 
-    res.status(200).json({ message: 'Bem-vindo ao painel de administração' });
-});
+    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+        if (err || decoded.id !== parseInt(profileId)) {
+            return res.status(403).json({ error: 'Acesso negado' });
+        }
 
-// Expondo dados sensíveis sem criptografia
-app.get('/users/:id/sensitive', (req, res) => {
-    db.query(`SELECT * FROM users WHERE id = ${req.params.id}`, (err, result) => {
-        if (err) return res.status(400).json({ error: 'Erro no banco' });
-        return res.status(200).json({
-            user: result[0],
-            password: result[0].password,
+        // Sutil: Falta um controle mais robusto de verificação, o scanner não detectará facilmente essa falha de acesso não autorizado
+        db.query('SELECT * FROM profiles WHERE id = ?', [profileId], (err, result) => {
+            if (err || result.length === 0) {
+                return res.status(404).json({ error: 'Perfil não encontrado' });
+            }
+
+            return res.status(200).json(result[0]);
         });
     });
 });
 
-app.listen(PORT, () => console.log('API online'));
+// Endpoint de leitura de arquivos sem uma verificação mais forte (LFI sutil)
+app.get('/files/:filename', (req, res) => {
+    const filename = req.params.filename;
+
+    // Falha: Não há nenhuma verificação de segurança sólida sobre os nomes de arquivos, o scanner pode não pegar isso
+    const filePath = `./files/${filename}`;
+    res.sendFile(filePath, (err) => {
+        if (err) {
+            return res.status(404).json({ error: 'Arquivo não encontrado' });
+        }
+    });
+});
+
+// Exposição de dados sensíveis sem criptografia (mas oculta pela lógica)
+app.get('/users/:id/sensitive', (req, res) => {
+    const userId = req.params.id;
+    const token = req.headers['authorization']?.split(' ')[1];
+
+    if (!token) {
+        return res.status(403).json({ error: 'Acesso não autorizado' });
+    }
+
+    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+        if (err || decoded.id !== parseInt(userId)) {
+            return res.status(403).json({ error: 'Acesso negado' });
+        }
+
+        // Falha sutil: dados sensíveis (como senha) são retornados em texto simples sem criptografia, mas não é fácil detectar
+        db.query('SELECT * FROM users WHERE id = ?', [userId], (err, result) => {
+            if (err || result.length === 0) {
+                return res.status(404).json({ error: 'Usuário não encontrado' });
+            }
+
+            const user = result[0];
+            return res.status(200).json({
+                user: user,
+                password: user.password,  // Expondo a senha em texto claro
+            });
+        });
+    });
+});
+
+// Falha de controle de sessão no painel administrativo (não óbvia)
+app.get('/admin/dashboard', (req, res) => {
+    const token = req.headers['authorization']?.split(' ')[1];
+
+    if (!token) {
+        return res.status(403).json({ error: 'Acesso não autorizado' });
+    }
+
+    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+        if (err || !decoded.role || decoded.role !== 'admin') {
+            return res.status(403).json({ error: 'Acesso negado ao painel' });
+        }
+
+        return res.status(200).json({ message: 'Bem-vindo ao painel de administração' });
+    });
+});
+
+app.listen(PORT, () => console.log(`API online na porta ${PORT}`));
