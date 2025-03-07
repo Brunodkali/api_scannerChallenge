@@ -2,19 +2,21 @@ openapi: 3.0.0
 info:
   title: Vulnerable API Challenger
   description: >
-    API com vulnerabilidades conhecidas implementadas de forma sutil para dificultar a detecção por scanners automatizados.
-    Contém falhas de autenticação customizada, IDOR disfarçado, SQL Injection ofuscado, LFI, SSRF e controle de acesso administrativo fraco.
+    API com vulnerabilidades conhecidas implementadas de forma sutil para dificultar a detecção automática.
+    Todas as rotas estão abertas (sem autenticação), permitindo exploração de falhas como IDOR, SQL Injection ofuscado,
+    LFI, SSRF e exposição de dados sensíveis.
   version: "1.0.0"
 servers:
-  - url: http://localhost:3000
+  - url: https://api-scannerchallenge.onrender.com
     description: Servidor local para testes
 
 paths:
   /auth/login:
     post:
-      summary: Autenticação fraca via email
+      summary: Gera um token fictício com base no email
       description: >
-        Endpoint de login que gera um token customizado (hash SHA256 do email concatenado com um segredo).
+        Este endpoint gera um token (apenas exemplificativo) utilizando o hash SHA256 do email concatenado com um segredo.
+        (Não há autenticação ou validação adicional.)
       requestBody:
         required: true
         content:
@@ -45,7 +47,8 @@ paths:
     get:
       summary: Obtém informações do usuário (IDOR disfarçado)
       description: >
-        Retorna dados do usuário junto com metadados. A autorização é baseada no domínio do e-mail (ex.: "example.com") ou na correspondência do cabeçalho 'x-user-id'.
+        Retorna os dados do usuário com um objeto de metadados adicional.
+        A autorização é ausente, permitindo acesso indevido a informações de qualquer usuário.
       parameters:
         - name: id
           in: path
@@ -75,10 +78,6 @@ paths:
                       timestamp:
                         type: string
                         format: date-time
-        '401':
-          description: Token ausente ou cabeçalho x-user-email não fornecido.
-        '403':
-          description: Acesso negado.
         '404':
           description: Usuário não encontrado.
 
@@ -86,8 +85,8 @@ paths:
     get:
       summary: Pesquisa de produtos (SQL Injection ofuscado)
       description: >
-        Permite pesquisar produtos. A entrada no parâmetro 'q' é parcialmente sanitizada,
-        possibilitando a exploração de injeção SQL de forma não óbvia.
+        Pesquisa produtos com base no parâmetro 'q'. A sanitização é aplicada de forma parcial, permitindo
+        exploração de injeção SQL de maneira não óbvia.
       parameters:
         - name: q
           in: query
@@ -114,7 +113,8 @@ paths:
     get:
       summary: Obtém perfil do usuário (BOLA sutil)
       description: >
-        Retorna informações do perfil. Requer que o cabeçalho 'x-access' esteja definido como "granted".
+        Retorna os dados do perfil de um usuário.
+        A falta de controles de autorização permite acesso indevido aos perfis.
       parameters:
         - name: id
           in: path
@@ -133,7 +133,7 @@ paths:
                   profile:
                     type: object
         '403':
-          description: Acesso negado (cabeçalho x-access ausente ou inválido).
+          description: Acesso negado.
         '404':
           description: Perfil não encontrado.
 
@@ -141,8 +141,8 @@ paths:
     get:
       summary: Leitura de arquivos (LFI sutil)
       description: >
-        Permite a leitura de arquivos cujo nome termina com .txt. A validação é mínima e não impede completamente
-        tentativas de LFI.
+        Permite a leitura de arquivos cujo nome termina com ".txt". A validação é mínima, não impedindo
+        completamente tentativas de inclusão de arquivos locais.
       parameters:
         - name: filename
           in: path
@@ -166,8 +166,8 @@ paths:
     get:
       summary: Exposição de dados sensíveis do usuário
       description: >
-        Retorna informações sensíveis, incluindo a senha em texto claro (embora codificada superficialmente),
-        demonstrando exposição inadequada de dados.
+        Retorna informações sensíveis do usuário, incluindo dados confidenciais (ex.: senha em texto claro),
+        demonstrando a exposição inadequada de dados.
       parameters:
         - name: id
           in: path
@@ -191,8 +191,6 @@ paths:
                       password:
                         type: string
                         example: "plaintextpassword"
-        '403':
-          description: Acesso negado.
         '404':
           description: Usuário não encontrado.
 
@@ -200,8 +198,8 @@ paths:
     get:
       summary: Painel administrativo (controle de acesso fraco)
       description: >
-        Exibe o painel administrativo. O acesso é concedido se o cabeçalho 'x-admin-token' corresponder ao esperado
-        ou se o e-mail do usuário terminar com '@example.com'.
+        Exibe o painel administrativo. Sem autenticação, qualquer acesso é permitido,
+        demonstrando uma falha de controle de acesso.
       responses:
         '200':
           description: Acesso concedido ao painel administrativo.
@@ -214,14 +212,14 @@ paths:
                     type: string
                     example: "Bem-vindo ao painel administrativo"
         '403':
-          description: Acesso negado ao painel administrativo.
+          description: Acesso negado.
 
   /fetch:
     get:
-      summary: SSRF sutil – busca o conteúdo de uma URL remota
+      summary: SSRF sutil – Busca conteúdo de uma URL remota
       description: >
-        Endpoint que realiza uma requisição HTTP/HTTPS para a URL fornecida via parâmetro e retorna seu conteúdo.
-        Falta validação adequada da URL, possibilitando SSRF.
+        Realiza uma requisição HTTP ou HTTPS para a URL fornecida via parâmetro e retorna seu conteúdo.
+        A falta de validação adequada da URL possibilita ataques SSRF.
       parameters:
         - name: url
           in: query
@@ -241,22 +239,4 @@ paths:
         '500':
           description: Erro ao buscar a URL.
 
-components:
-  securitySchemes:
-    # Autenticação customizada via cabeçalhos; não utiliza JWT.
-    BasicAuthCustom:
-      type: apiKey
-      in: header
-      name: Authorization
-  schemas:
-    User:
-      type: object
-      properties:
-        id:
-          type: string
-        email:
-          type: string
-    Product:
-      type: object
-    Profile:
-      type: object
+components: {}
