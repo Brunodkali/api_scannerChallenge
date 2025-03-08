@@ -9,9 +9,14 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// HSTS Protection - Garantindo que a comunicação seja sempre via HTTPS
+app.use((req, res, next) => {
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
+
 // Forçar redirecionamento para HTTPS
 app.use((req, res, next) => {
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
   if (req.headers['x-forwarded-proto'] !== 'https') {
     return res.redirect('https://' + req.headers.host + req.url);
   }
@@ -38,99 +43,42 @@ db.getConnection(err => {
   }
 });
 
-/*
-  Endpoint: /auth/login
-  Gera um token fictício a partir do email (hash SHA256 do email concatenado com um segredo).
-  Este token é meramente ilustrativo e não é utilizado para qualquer validação.
-*/
+// Falha 1: Lógica de autorização dinâmica (Controle de acesso fraco)
 app.post('/auth/login', (req, res) => {
-  const { email } = req.body;
-  if (!email) return res.status(400).json({ error: 'Email obrigatório' });
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email e senha são obrigatórios' });
+
   const secret = process.env.CUSTOM_SECRET || "defaultsecret";
   const token = crypto.createHash('sha256').update(email + secret).digest('hex');
-  res.status(200).json({ token });
+  const isAuthorized = token.endsWith('e');  // Condição dinâmica (falha de autorização)
+
+  if (isAuthorized) {
+    res.status(200).json({ message: "Autorizado", token });
+  } else {
+    res.status(403).json({ message: "Não autorizado" });
+  }
 });
 
-/*
-  Endpoint: /users/{id}
-  Retorna dados do usuário com metadados adicionais.
-  Falha: IDOR disfarçado – não há controle de acesso, permitindo acesso a dados de qualquer usuário.
-*/
-app.get('/users/:id', (req, res) => {
-  const userId = req.params.id;
-  const query = `SELECT * FROM users WHERE id = ${mysql.escape(userId)}`;
-  db.query(query, (err, results) => {
-    if (err) return res.status(500).json({ error: 'Erro interno no banco' });
-    if (results.length === 0) return res.status(404).json({ error: 'Usuário não encontrado' });
-    res.status(200).json({
-      status: "success",
-      data: results[0],
-      metadata: {
-        request_id: Math.random().toString(36).substring(7),
-        timestamp: new Date().toISOString()
-      }
-    });
-  });
-});
-
-/*
-  Endpoint: /products/search
-  Realiza a pesquisa de produtos com base no parâmetro 'q'.
-  Falha: Sanitização parcial do parâmetro permite injeção SQL de forma sutil.
-*/
+// Falha 2: Injeção SQL sutil
 app.get('/products/search', (req, res) => {
   let search = decodeURIComponent(req.query.q || '');
   let safeSearch = mysql.escape(search);
-  // Remove as aspas geradas pelo escape para possibilitar uma injeção sutil
+  // Remover as aspas para permitir uma injeção sutil
   safeSearch = safeSearch.substring(1, safeSearch.length - 1);
-  const query = "SELECT * FROM products WHERE name LIKE CONCAT('%', '" + safeSearch + "', '%')";
+  
+  const query = `SELECT * FROM products WHERE name LIKE CONCAT('%', '${safeSearch}', '%')`;
   db.query(query, (err, results) => {
-    if (err) return res.status(400).json({ error: 'Erro na consulta' });
+    if (err) return res.status(500).json({ error: 'Erro ao consultar' });
     res.status(200).json({ products: results });
   });
 });
 
-/*
-  Endpoint: /profiles/{id}
-  Retorna os dados do perfil do usuário.
-  Falha: Falta de controle de autorização (BOLA sutil), permitindo acesso irrestrito ao perfil.
-*/
-app.get('/profiles/:id', (req, res) => {
-  const profileId = req.params.id;
-  const query = "SELECT * FROM profiles WHERE id = " + mysql.escape(profileId);
-  db.query(query, (err, results) => {
-    if (err) return res.status(500).json({ error: 'Erro no banco' });
-    if (results.length === 0) return res.status(404).json({ error: 'Perfil não encontrado' });
-    res.status(200).json({ profile: results[0] });
-  });
-});
-
-/*
-  Endpoint: /files/{filename}
-  Permite a leitura de arquivos cujo nome termina com ".txt".
-  Falha: Validação mínima do nome do arquivo, possibilitando ataques LFI.
-*/
-app.get('/files/:filename', (req, res) => {
-  let filename = req.params.filename;
-  if (!filename.endsWith('.txt')) {
-    return res.status(403).json({ error: 'Tipo de arquivo inválido' });
-  }
-  const filePath = path.join(__dirname, 'files', filename);
-  res.sendFile(filePath, err => {
-    if (err) return res.status(404).json({ error: 'Arquivo não encontrado' });
-  });
-});
-
-/*
-  Endpoint: /users/{id}/sensitive
-  Exibe dados sensíveis do usuário, incluindo a senha em texto claro.
-  Falha: Exposição inadequada de dados sensíveis.
-*/
-app.get('/users/:id/sensitive', (req, res) => {
+// Falha 3: Exposição de dados sensíveis via URL obfuscada
+app.get('/user/:id', (req, res) => {
   const userId = req.params.id;
-  const query = "SELECT * FROM users WHERE id = " + mysql.escape(userId);
+  const query = `SELECT * FROM users WHERE id = ${mysql.escape(userId)}`;
   db.query(query, (err, results) => {
-    if (err) return res.status(500).json({ error: 'Erro no banco' });
+    if (err) return res.status(500).json({ error: 'Erro ao acessar dados' });
     if (results.length === 0) return res.status(404).json({ error: 'Usuário não encontrado' });
     const user = results[0];
     res.status(200).json({
@@ -142,33 +90,52 @@ app.get('/users/:id/sensitive', (req, res) => {
   });
 });
 
-/*
-  Endpoint: /admin/dashboard
-  Exibe o painel administrativo.
-  Falha: Controle de acesso fraco – sem qualquer verificação, permitindo acesso irrestrito.
-*/
-app.get('/admin/dashboard', (req, res) => {
-  res.status(200).json({ message: "Bem-vindo ao painel administrativo" });
-});
+// Falha 4: Manipulação de dados via parâmetros obfuscados (Base64)
+app.get('/files/:filename', (req, res) => {
+  let filename = req.params.filename;
 
-/*
-  Endpoint: /fetch
-  Realiza uma requisição para uma URL fornecida e retorna seu conteúdo.
-  Falha: SSRF sutil – falta de validação adequada da URL, possibilitando exploração.
-*/
-app.get('/fetch', (req, res) => {
-  const url = req.query.url;
-  if (!url) return res.status(400).json({ error: 'URL obrigatória' });
-  const protocol = url.startsWith('https') ? https : http;
-  protocol.get(url, response => {
-    let data = '';
-    response.on('data', chunk => { data += chunk; });
-    response.on('end', () => { res.status(200).send(data); });
-  }).on('error', err => {
-    res.status(500).json({ error: 'Erro ao buscar a URL' });
+  // Falha potencial: Base64 pode ser manipulado ou obfuscado no parâmetro de forma que o scanner não detecta
+  let decodedFilename = Buffer.from(filename, 'base64').toString('utf8');
+
+  if (!decodedFilename.endsWith('.txt')) {
+    return res.status(403).json({ error: 'Tipo de arquivo inválido' });
+  }
+
+  const filePath = path.join(__dirname, 'files', decodedFilename);
+  res.sendFile(filePath, err => {
+    if (err) return res.status(404).json({ error: 'Arquivo não encontrado' });
   });
 });
 
+// Falha 5: Condição de corrida sutil (race condition) em logins simultâneos
+app.post('/auth/race-condition', (req, res) => {
+  const { username, password } = req.body;
+
+  // Simulação de race condition: Se dois usuários enviarem a requisição simultaneamente, a falha pode ser explorada
+  const userHash = crypto.createHash('sha256').update(username + password).digest('hex');
+  setTimeout(() => {
+    res.status(200).json({ message: `Token gerado com hash ${userHash}` });
+  }, Math.random() * 1000); // Condição de corrida, o tempo aleatório pode permitir a manipulação
+
+});
+
+// Falha 6: Cross-Site Request Forgery (CSRF) com tokens inválidos
+app.post('/update-profile', (req, res) => {
+  const { userId, newEmail } = req.body;
+  const csrfToken = req.headers['csrf-token'];
+
+  if (!csrfToken || csrfToken !== process.env.CSRF_SECRET) {
+    return res.status(403).json({ error: 'Token CSRF inválido ou ausente' });
+  }
+
+  const query = `UPDATE users SET email = ${mysql.escape(newEmail)} WHERE id = ${mysql.escape(userId)}`;
+  db.query(query, (err, results) => {
+    if (err) return res.status(500).json({ error: 'Erro ao atualizar' });
+    res.status(200).json({ message: 'Perfil atualizado com sucesso' });
+  });
+});
+
+// Configuração do servidor
 app.listen(PORT, () => {
   console.log(`API rodando na porta ${PORT}`);
 });
