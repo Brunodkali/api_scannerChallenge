@@ -9,6 +9,14 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Forçar redirecionamento para HTTPS
+app.use((req, res, next) => {
+  if (req.headers['x-forwarded-proto'] !== 'https') {
+    return res.redirect('https://' + req.headers.host + req.url);
+  }
+  next();
+});
+
 app.use(express.json());
 
 // Cria pool de conexões com o banco de dados
