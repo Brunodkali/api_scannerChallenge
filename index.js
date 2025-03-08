@@ -11,6 +11,7 @@ const PORT = process.env.PORT || 3000;
 
 // Forçar redirecionamento para HTTPS
 app.use((req, res, next) => {
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
   if (req.headers['x-forwarded-proto'] !== 'https') {
     return res.redirect('https://' + req.headers.host + req.url);
   }
