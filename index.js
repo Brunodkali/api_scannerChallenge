@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
 const path = require('path');
+const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,6 +25,7 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
+app.use(cors());
 
 // Cria pool de conexões com o banco de dados
 const db = mysql.createPool({
